@@ -10,7 +10,9 @@
  * self-authored design-md skill (google-labs DESIGN.md format).
  */
 import { fileURLToPath } from 'node:url';
+import { readdirSync } from 'node:fs';
 import { apply as applyFilesystemProvider } from '@deepseek-ai/dsh-skill-filesystem';
+import { Hono } from 'hono';
 const skillsRoot = fileURLToPath(new URL('../skills/', import.meta.url));
 export const name = 'skill-pack';
 export const inject = ['skills'];
@@ -23,4 +25,25 @@ export function apply(ctx) {
         bundledSkillDir: skillsRoot,
         watch: false,
     });
+    // Hono app: try to mount on the host http service when available.
+    try {
+        const http = ctx.http;
+        if (http?.mount)
+            http.mount('/skill-pack', createHonoApp(ctx).fetch);
+    }
+    catch {
+        /* no host http service */
+    }
+}
+export function createHonoApp(_ctx) {
+    const app = new Hono();
+    let skillCount = 0;
+    try {
+        skillCount = readdirSync(skillsRoot, { withFileTypes: true }).filter((e) => e.isDirectory()).length;
+    }
+    catch {
+        /* skills dir not readable here */
+    }
+    app.get('/api/skill-pack/health', (c) => c.json({ ok: true, plugin: 'dsh-skill-pack', ts: true, hono: true, skills: skillCount }));
+    return app;
 }

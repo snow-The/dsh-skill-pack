@@ -62,6 +62,12 @@ export function apply(ctx: any) {
       const L: string[] = []
       L.push('Skill wiki audit (~/.dsh/skill-wiki)')
       L.push('  funnel: raw=' + a.funnel.raw + ' patterns=' + a.funnel.patterns + ' candidates=' + a.funnel.candidates + ' active=' + a.funnel.active)
+      if (a.candidates.length > 0) {
+        L.push('  candidates: ' + a.candidates.length)
+        for (const c of a.candidates) {
+          L.push('    - ' + c.name + (c.origin ? ' (origin: ' + c.origin + ')' : ' (origin not recorded)') + ' ← ' + (c.patterns.join(', ') || 'no patterns'))
+        }
+      }
       L.push(a.orphanPatterns.length === 0
         ? '  ORPHANS: none - every pattern is referenced by a skill'
         : '  ORPHANS (' + a.orphanPatterns.length + '): ' + a.orphanPatterns.join(', ') + '  <- knowledge that never reached a skill')
@@ -133,12 +139,12 @@ export function apply(ctx: any) {
     description: 'Skill Proposer: write a candidate SKILL.md (wiki-informed) into skills/. Generates an atomic skill creation/update proposal grounded in wiki patterns.',
     parameters: {
       type: 'object', properties: {
-        name: { type: 'string' }, description: { type: 'string' }, body: { type: 'string' }, patterns: { type: 'array', items: { type: 'string' } },
+        name: { type: 'string' }, description: { type: 'string' }, body: { type: 'string' }, origin: { type: 'string' }, patterns: { type: 'array', items: { type: 'string' } },
       }, required: [],
     },
     output: textOut,
     execute: (args: any) => {
-      const f = proposeSkill(String(args.name), String(args.description), String(args.body), (args?.patterns ?? []).map(String))
+      const f = proposeSkill(String(args.name), String(args.description), String(args.body), (args?.patterns ?? []).map(String), String(args?.origin ?? ''))
       logEvolution('propose', 'skill', String(args.name))
       return 'proposed skill → ' + f
     },

@@ -2127,11 +2127,12 @@ function logEvolution(round, action, detail) {
   ensureLayers();
   appendFileSync(join(wikiRoot(), "wiki", "logs.md"), NL + "- **" + ts() + "** [" + round + "] " + action + ": " + detail + NL, "utf8");
 }
-function proposeSkill(name2, description, body, fromPatterns = []) {
+function proposeSkill(name2, description, body, fromPatterns = [], origin = "") {
   ensureLayers();
   const dir = join(wikiRoot(), "skills", slug(name2));
   mkdirSync(dir, { recursive: true });
-  const sk = "---" + NL + "name: " + slug(name2) + NL + "description: " + description + NL + "source: wiki-proposed" + NL + "patterns: " + JSON.stringify(fromPatterns) + NL + "proposed: " + ts() + NL + "---" + NL + NL + body;
+  const originLine = String(origin ?? "").trim() ? NL + "origin: " + String(origin).trim() : "";
+  const sk = "---" + NL + "name: " + slug(name2) + NL + "description: " + description + NL + "source: wiki-proposed" + originLine + NL + "patterns: " + JSON.stringify(fromPatterns) + NL + "proposed: " + ts() + NL + "---" + NL + NL + body;
   writeFileSync(join(dir, "SKILL.md"), sk, "utf8");
   return join(dir, "SKILL.md");
 }
@@ -2230,7 +2231,10 @@ function skillRefs(md) {
     while (at >= 0) {
       let j = at;
       while (j < text.length && stops.indexOf(text[j]) < 0) j++;
-      const token = text.slice(at, j).replace(/[.,;:]+$/, "");
+      let start = at;
+      while (start >= 3 && text.slice(start - 3, start) === "../") start -= 3;
+      if (start >= 2 && text.slice(start - 2, start) === "./") start -= 2;
+      const token = text.slice(start, j).replace(/[.,;:]+$/, "");
       add(token);
       at = text.indexOf(d, j);
     }
@@ -2330,6 +2334,10 @@ function auditWiki() {
     funnel: { raw: count("raw"), patterns: patterns.length, candidates: count("skills"), active: count("skills-active") },
     patterns,
     orphanPatterns: patterns.filter((p) => !referenced.has(p)),
+    candidates: auditTree(join2(wikiRoot(), "skills")).map((b) => {
+      const sk = readFileSync2(join2(wikiRoot(), "skills", b.name, "SKILL.md"), "utf8");
+      return { name: b.name, origin: frontmatterList(sk, "origin")[0] ?? "", patterns: frontmatterList(sk, "patterns") };
+    }),
     bundles: [...auditTree(join2(wikiRoot(), "skills")), ...auditTree(join2(wikiRoot(), "skills-active"))]
   };
 }
@@ -2379,6 +2387,12 @@ function apply(ctx) {
       const L = [];
       L.push("Skill wiki audit (~/.dsh/skill-wiki)");
       L.push("  funnel: raw=" + a.funnel.raw + " patterns=" + a.funnel.patterns + " candidates=" + a.funnel.candidates + " active=" + a.funnel.active);
+      if (a.candidates.length > 0) {
+        L.push("  candidates: " + a.candidates.length);
+        for (const c of a.candidates) {
+          L.push("    - " + c.name + (c.origin ? " (origin: " + c.origin + ")" : " (origin not recorded)") + " \u2190 " + (c.patterns.join(", ") || "no patterns"));
+        }
+      }
       L.push(a.orphanPatterns.length === 0 ? "  ORPHANS: none - every pattern is referenced by a skill" : "  ORPHANS (" + a.orphanPatterns.length + "): " + a.orphanPatterns.join(", ") + "  <- knowledge that never reached a skill");
       const fmt = (bs, label) => {
         if (bs.length === 0) return;
@@ -2456,13 +2470,14 @@ function apply(ctx) {
         name: { type: "string" },
         description: { type: "string" },
         body: { type: "string" },
+        origin: { type: "string" },
         patterns: { type: "array", items: { type: "string" } }
       },
       required: []
     },
     output: textOut,
     execute: (args) => {
-      const f = proposeSkill(String(args.name), String(args.description), String(args.body), (args?.patterns ?? []).map(String));
+      const f = proposeSkill(String(args.name), String(args.description), String(args.body), (args?.patterns ?? []).map(String), String(args?.origin ?? ""));
       logEvolution("propose", "skill", String(args.name));
       return "proposed skill \u2192 " + f;
     }

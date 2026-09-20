@@ -1,6 +1,6 @@
 {
   "name": "@snow-the/dsh-skill-pack",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Curated engineering skills for DeepSeek Harness: handoff, grilling, teach, spec/ticket workflows, writing skills, and the DESIGN.md format. Cross-platform (pure SKILL.md text, no platform code).",
   "type": "module",
   "main": "./dist/index.js",
@@ -20,6 +20,7 @@
   "files": [
     "dist",
     "skills",
+    "references",
     "cordis.patch.yml",
     "LICENSE",
     "README.md"

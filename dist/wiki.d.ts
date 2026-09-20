@@ -8,7 +8,14 @@ export declare function consolidatePattern(name: string, title: string, diagnosi
 /** Append to the evolution log (logs.md). */
 export declare function logEvolution(round: string, action: string, detail: string): void;
 /** Propose a skill update: write a candidate SKILL.md into skills/ (Skill Proposer). */
-export declare function proposeSkill(name: string, description: string, body: string, fromPatterns?: string[]): string;
+/**
+ * Write a candidate SKILL.md into skills/. `origin` records WHICH model/session evolved it.
+ *
+ * WikiSkill (arXiv 2608.27454) found that evolved skills transfer across models and families, and
+ * that skills evolved by another model can beat self-evolved ones - which is only actionable if the
+ * origin is written down. It is frontmatter, so it costs no context until someone reads the file.
+ */
+export declare function proposeSkill(name: string, description: string, body: string, fromPatterns?: string[], origin?: string): string;
 /** Gate: accept a candidate skill (move to active) or reject (remove). */
 export declare function gateSkill(name: string, accept: boolean, score?: number): string;
 /** Status of the skill wiki. */

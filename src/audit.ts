@@ -48,7 +48,13 @@ export function skillRefs(md: string): string[] {
     while (at >= 0) {
       let j = at;
       while (j < text.length && stops.indexOf(text[j]) < 0) j++;
-      const token = text.slice(at, j).replace(/[.,;:]+$/, '');
+      // Walk BACK over any ../ prefix. Dropping it made every `../../references/x` resolve inside
+      // the skill directory instead of the plugin root, so a shared reference layer that DOES exist
+      // was reported as seven broken links - a detector bug that read exactly like a content bug.
+      let start = at;
+      while (start >= 3 && text.slice(start - 3, start) === '../') start -= 3;
+      if (start >= 2 && text.slice(start - 2, start) === './') start -= 2;
+      const token = text.slice(start, j).replace(/[.,;:]+$/, '');
       add(token);
       at = text.indexOf(d, j);
     }
@@ -127,10 +133,13 @@ export function frontmatterList(text: string, key: string): string[] {
   return out;
 }
 
+export interface CandidateInfo { name: string; origin: string; patterns: string[] }
+
 export interface WikiAudit {
   funnel: { raw: number; patterns: number; candidates: number; active: number };
   patterns: string[];
   orphanPatterns: string[];
+  candidates: CandidateInfo[];
   bundles: BundleAudit[];
 }
 
@@ -153,6 +162,10 @@ export function auditWiki(): WikiAudit {
     funnel: { raw: count('raw'), patterns: patterns.length, candidates: count('skills'), active: count('skills-active') },
     patterns,
     orphanPatterns: patterns.filter((p) => !referenced.has(p)),
+    candidates: auditTree(join(wikiRoot(), 'skills')).map((b) => {
+      const sk = readFileSync(join(wikiRoot(), 'skills', b.name, 'SKILL.md'), 'utf8');
+      return { name: b.name, origin: frontmatterList(sk, 'origin')[0] ?? '', patterns: frontmatterList(sk, 'patterns') };
+    }),
     bundles: [...auditTree(join(wikiRoot(), 'skills')), ...auditTree(join(wikiRoot(), 'skills-active'))],
   };
 }

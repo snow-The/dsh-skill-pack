@@ -18,6 +18,11 @@ export declare function auditBundle(dir: string, name: string): BundleAudit;
 export declare function auditTree(rootDir: string): BundleAudit[];
 /** Read a frontmatter list field (`patterns: a, b` / `patterns: [a, b]`). No regex, on purpose. */
 export declare function frontmatterList(text: string, key: string): string[];
+export interface CandidateInfo {
+    name: string;
+    origin: string;
+    patterns: string[];
+}
 export interface WikiAudit {
     funnel: {
         raw: number;
@@ -27,6 +32,7 @@ export interface WikiAudit {
     };
     patterns: string[];
     orphanPatterns: string[];
+    candidates: CandidateInfo[];
     bundles: BundleAudit[];
 }
 /** The evolution wiki: the funnel, which patterns actually reached a skill, and every bundle. */

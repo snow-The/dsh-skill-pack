@@ -54,11 +54,19 @@ export function logEvolution(round: string, action: string, detail: string): voi
 }
 
 /** Propose a skill update: write a candidate SKILL.md into skills/ (Skill Proposer). */
-export function proposeSkill(name: string, description: string, body: string, fromPatterns: string[] = []): string {
+/**
+ * Write a candidate SKILL.md into skills/. `origin` records WHICH model/session evolved it.
+ *
+ * WikiSkill (arXiv 2608.27454) found that evolved skills transfer across models and families, and
+ * that skills evolved by another model can beat self-evolved ones - which is only actionable if the
+ * origin is written down. It is frontmatter, so it costs no context until someone reads the file.
+ */
+export function proposeSkill(name: string, description: string, body: string, fromPatterns: string[] = [], origin = ''): string {
   ensureLayers();
   const dir = join(wikiRoot(), 'skills', slug(name));
   mkdirSync(dir, { recursive: true });
-  const sk = '---' + NL + 'name: ' + slug(name) + NL + 'description: ' + description + NL + 'source: wiki-proposed' + NL + 'patterns: ' + JSON.stringify(fromPatterns) + NL + 'proposed: ' + ts() + NL + '---' + NL + NL + body;
+  const originLine = String(origin ?? '').trim() ? NL + 'origin: ' + String(origin).trim() : '';
+  const sk = '---' + NL + 'name: ' + slug(name) + NL + 'description: ' + description + NL + 'source: wiki-proposed' + originLine + NL + 'patterns: ' + JSON.stringify(fromPatterns) + NL + 'proposed: ' + ts() + NL + '---' + NL + NL + body;
   writeFileSync(join(dir, 'SKILL.md'), sk, 'utf8');
   return join(dir, 'SKILL.md');
 }

@@ -14,12 +14,12 @@ import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, append
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-const NL = String.fromCharCode(10);
-function wikiRoot(): string {
+export const NL = String.fromCharCode(10);
+export function wikiRoot(): string {
   const base = process.env.DSH_HOME ?? join(homedir(), '.dsh');
   return join(base, 'skill-wiki');
 }
-function ensureLayers(): void {
+export function ensureLayers(): void {
   for (const d of ['raw', 'wiki/patterns', 'skills', 'skills-active']) mkdirSync(join(wikiRoot(), d), { recursive: true });
   const logs = join(wikiRoot(), 'wiki', 'logs.md');
   if (!existsSync(logs)) writeFileSync(logs, '# Skill Evolution Log' + NL + NL + '<!-- Wiki Maintainer appends one entry per evolution round -->' + NL, 'utf8');

@@ -19,6 +19,7 @@ import { Hono } from 'hono'
 import {
   ingestExperience, consolidatePattern, logEvolution, proposeSkill, gateSkill, wikiStatus, ingestFromAcp,
 } from './wiki.js'
+import { auditWiki, auditTree, approxTokens } from './audit.js'
 
 const skillsRoot = fileURLToPath(new URL('../skills/', import.meta.url))
 
@@ -45,6 +46,49 @@ export function apply(ctx: any) {
     parameters: {},
     output: textOut,
     execute: () => { const s = wikiStatus(); return 'Skill Wiki (~/.dsh/skill-wiki):\n  raw=' + s.raw + ' patterns=' + s.patterns + ' candidates=' + s.skills + ' active=' + s.active + '\n\nrecent log:\n' + (s.logs.length ? s.logs.join('\n') : '(empty)') },
+  })
+
+  reg({
+    name: 'skillwiki_audit',
+    description: 'Audit the skill wiki AND its bundles, for the two claims two papers make measurable. WikiSkill (arXiv 2608.27454) shows persistent knowledge accumulation is critical - so a pattern no skill references is knowledge that never became executable, and this reports those ORPHANS. SkillZip Pro (arXiv 2608.30785) notes a skill is a directory bundle with progressive loading - so it also reports each bundle token cost, content DUPLICATED between the root and its references (paid on every activation), and references that point at files which do not exist (broken routing: the skill silently loses a branch). Pass catalog to also audit a shipped skills directory.',
+    parameters: {
+      type: 'object', properties: {
+        catalog: { type: 'string', description: 'optional extra directory of skill bundles to audit (e.g. a plugin skills/ dir)' },
+      }, required: [],
+    },
+    output: textOut,
+    execute: (args: any) => {
+      const a = auditWiki()
+      const L: string[] = []
+      L.push('Skill wiki audit (~/.dsh/skill-wiki)')
+      L.push('  funnel: raw=' + a.funnel.raw + ' patterns=' + a.funnel.patterns + ' candidates=' + a.funnel.candidates + ' active=' + a.funnel.active)
+      L.push(a.orphanPatterns.length === 0
+        ? '  ORPHANS: none - every pattern is referenced by a skill'
+        : '  ORPHANS (' + a.orphanPatterns.length + '): ' + a.orphanPatterns.join(', ') + '  <- knowledge that never reached a skill')
+      const fmt = (bs: any[], label: string) => {
+        if (bs.length === 0) return
+        const bad = bs.filter((b) => b.missingRefs.length > 0 || b.missingDirs.length > 0)
+        const dup = bs.filter((b) => b.dupTokens > 0)
+        L.push('  ' + label + ': ' + bs.length + ' bundles, ' + bad.length + ' with missing refs, ' + dup.length + ' with root/reference duplication')
+        for (const b of bs) {
+          if (b.missingRefs.length === 0 && b.missingDirs.length === 0 && b.dupTokens === 0) continue
+          L.push('    - ' + b.name + ': root ' + b.rootTokens + ' tok / bundle ' + b.bundleTokens + ' tok / refs ' + b.refs.length
+            + (b.missingRefs.length ? ' / MISSING FILE: ' + b.missingRefs.slice(0, 3).join(', ') : '')
+            + (b.missingDirs.length ? ' / dir-not-present: ' + b.missingDirs.slice(0, 3).join(', ') : '')
+            + (b.dupTokens ? ' / dup ' + b.dupLines.length + ' line(s) ~' + b.dupTokens + ' tok' : ''))
+        }
+      }
+      fmt(a.bundles, 'evolution wiki')
+      const cat = String(args?.catalog ?? '').trim()
+      if (cat) {
+        const b2 = auditTree(cat)
+        const totalTok = b2.reduce((n, b) => n + b.bundleTokens, 0)
+        const rootTok = b2.reduce((n, b) => n + b.rootTokens, 0)
+        L.push('  catalog ' + cat + ': ' + b2.length + ' bundles, ' + rootTok + ' root tok / ' + totalTok + ' bundle tok (~' + Math.round((rootTok / Math.max(1, totalTok)) * 100) + '% always-loaded)')
+        fmt(b2, 'catalog detail')
+      }
+      return L.join(String.fromCharCode(10))
+    },
   })
 
   reg({

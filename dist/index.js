@@ -7,7 +7,7 @@ var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require
 
 // src/index.ts
 import { fileURLToPath } from "node:url";
-import { readdirSync as readdirSync2 } from "node:fs";
+import { readdirSync as readdirSync3 } from "node:fs";
 import { apply as applyFilesystemProvider } from "@deepseek-ai/dsh-skill-filesystem";
 
 // node_modules/.pnpm/hono@4.13.3/node_modules/hono/dist/compose.js
@@ -2193,6 +2193,147 @@ function ingestFromAcp(limit = 10) {
   }
 }
 
+// src/audit.ts
+import { readFileSync as readFileSync2, existsSync as existsSync2, readdirSync as readdirSync2 } from "node:fs";
+import { join as join2 } from "node:path";
+function approxTokens(text) {
+  return Math.ceil(String(text ?? "").length / 4);
+}
+function skillRefs(md) {
+  const out = /* @__PURE__ */ new Set();
+  const text = String(md ?? "");
+  const strip = (p) => {
+    let s = p.trim();
+    while (s.startsWith("./") || s.startsWith("/")) s = s.slice(s.startsWith("./") ? 2 : 1);
+    return s;
+  };
+  const add = (p) => {
+    const s0 = strip(p);
+    if (s0.includes("*")) return;
+    const s = s0;
+    if (!s || s.includes("://") || s.startsWith("#")) return;
+    if (s.includes(".") || s.includes("/")) out.add(s);
+  };
+  const linkMark = "](";
+  let i = text.indexOf(linkMark);
+  while (i >= 0) {
+    const end = text.indexOf(")", i + 2);
+    if (end < 0) break;
+    const target = text.slice(i + 2, end).trim().split(" ")[0];
+    add(target);
+    i = text.indexOf(linkMark, end);
+  }
+  const dirs = ["resources/", "references/", "scripts/", "assets/", "subskills/", "examples/"];
+  const stops = " 	" + String.fromCharCode(10) + '`)"]}>,;';
+  for (const d of dirs) {
+    let at = text.indexOf(d);
+    while (at >= 0) {
+      let j = at;
+      while (j < text.length && stops.indexOf(text[j]) < 0) j++;
+      const token = text.slice(at, j).replace(/[.,;:]+$/, "");
+      add(token);
+      at = text.indexOf(d, j);
+    }
+  }
+  return [...out];
+}
+function auditBundle(dir, name2) {
+  const rootFile = join2(dir, "SKILL.md");
+  const root = existsSync2(rootFile) ? readFileSync2(rootFile, "utf8") : "";
+  const refs = skillRefs(root);
+  const missingRefs = [];
+  const missingDirs = [];
+  const dupLines = [];
+  let bundleTokens = approxTokens(root);
+  let dupTokens = 0;
+  const rootLines = new Set(root.split(NL).map((l) => l.trim()).filter((l) => l.length >= 40));
+  for (const ref of refs) {
+    const p = join2(dir, ref);
+    const isFile = ref.includes(".");
+    if (!existsSync2(p)) {
+      if (isFile) missingRefs.push(ref);
+      else missingDirs.push(ref);
+      continue;
+    }
+    let body = "";
+    try {
+      body = readFileSync2(p, "utf8");
+    } catch {
+      missingRefs.push(ref);
+      continue;
+    }
+    bundleTokens += approxTokens(body);
+    for (const l of body.split(NL)) {
+      const t = l.trim();
+      if (t.length >= 40 && rootLines.has(t) && dupLines.length < 20) {
+        dupLines.push(t.slice(0, 90));
+        dupTokens += approxTokens(t);
+      }
+    }
+  }
+  return { name: name2, rootTokens: approxTokens(root), bundleTokens, refs, missingRefs, missingDirs, dupLines, dupTokens };
+}
+function auditTree(rootDir) {
+  let names = [];
+  try {
+    names = readdirSync2(rootDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const n of names) {
+    const dir = join2(rootDir, n);
+    if (existsSync2(join2(dir, "SKILL.md"))) out.push(auditBundle(dir, n));
+  }
+  return out;
+}
+function frontmatterList(text, key) {
+  const out = [];
+  for (const l of String(text ?? "").split(NL)) {
+    const t = l.trim();
+    if (!t.startsWith(key + ":")) continue;
+    let v = t.slice(key.length + 1).trim();
+    if (v.startsWith("[") && v.endsWith("]")) v = v.slice(1, -1);
+    for (const part of v.split(",")) {
+      let q = part.trim();
+      if (q.length >= 2 && (q.startsWith(String.fromCharCode(34)) || q.startsWith(String.fromCharCode(39)))) q = q.slice(1, -1);
+      if (q) out.push(q);
+    }
+  }
+  return out;
+}
+function auditWiki() {
+  ensureLayers();
+  const patternsDir = join2(wikiRoot(), "wiki", "patterns");
+  let files = [];
+  try {
+    files = readdirSync2(patternsDir).filter((f) => f.endsWith(".md"));
+  } catch {
+    files = [];
+  }
+  const patterns = files.map((f) => f.replace(".md", ""));
+  const referenced = /* @__PURE__ */ new Set();
+  for (const layer of ["skills", "skills-active"]) {
+    for (const b of auditTree(join2(wikiRoot(), layer))) {
+      const sk = readFileSync2(join2(wikiRoot(), layer, b.name, "SKILL.md"), "utf8");
+      for (const p of frontmatterList(sk, "patterns")) referenced.add(p.replace(".md", ""));
+    }
+  }
+  const count = (d) => {
+    try {
+      return readdirSync2(join2(wikiRoot(), d)).length;
+    } catch {
+      return 0;
+    }
+  };
+  return {
+    funnel: { raw: count("raw"), patterns: patterns.length, candidates: count("skills"), active: count("skills-active") },
+    patterns,
+    orphanPatterns: patterns.filter((p) => !referenced.has(p)),
+    bundles: [...auditTree(join2(wikiRoot(), "skills")), ...auditTree(join2(wikiRoot(), "skills-active"))]
+  };
+}
+
 // src/index.ts
 var skillsRoot = fileURLToPath(new URL("../skills/", import.meta.url));
 var name = "skill-pack";
@@ -2220,6 +2361,45 @@ function apply(ctx) {
     execute: () => {
       const s = wikiStatus();
       return "Skill Wiki (~/.dsh/skill-wiki):\n  raw=" + s.raw + " patterns=" + s.patterns + " candidates=" + s.skills + " active=" + s.active + "\n\nrecent log:\n" + (s.logs.length ? s.logs.join("\n") : "(empty)");
+    }
+  });
+  reg({
+    name: "skillwiki_audit",
+    description: "Audit the skill wiki AND its bundles, for the two claims two papers make measurable. WikiSkill (arXiv 2608.27454) shows persistent knowledge accumulation is critical - so a pattern no skill references is knowledge that never became executable, and this reports those ORPHANS. SkillZip Pro (arXiv 2608.30785) notes a skill is a directory bundle with progressive loading - so it also reports each bundle token cost, content DUPLICATED between the root and its references (paid on every activation), and references that point at files which do not exist (broken routing: the skill silently loses a branch). Pass catalog to also audit a shipped skills directory.",
+    parameters: {
+      type: "object",
+      properties: {
+        catalog: { type: "string", description: "optional extra directory of skill bundles to audit (e.g. a plugin skills/ dir)" }
+      },
+      required: []
+    },
+    output: textOut,
+    execute: (args) => {
+      const a = auditWiki();
+      const L = [];
+      L.push("Skill wiki audit (~/.dsh/skill-wiki)");
+      L.push("  funnel: raw=" + a.funnel.raw + " patterns=" + a.funnel.patterns + " candidates=" + a.funnel.candidates + " active=" + a.funnel.active);
+      L.push(a.orphanPatterns.length === 0 ? "  ORPHANS: none - every pattern is referenced by a skill" : "  ORPHANS (" + a.orphanPatterns.length + "): " + a.orphanPatterns.join(", ") + "  <- knowledge that never reached a skill");
+      const fmt = (bs, label) => {
+        if (bs.length === 0) return;
+        const bad = bs.filter((b) => b.missingRefs.length > 0 || b.missingDirs.length > 0);
+        const dup = bs.filter((b) => b.dupTokens > 0);
+        L.push("  " + label + ": " + bs.length + " bundles, " + bad.length + " with missing refs, " + dup.length + " with root/reference duplication");
+        for (const b of bs) {
+          if (b.missingRefs.length === 0 && b.missingDirs.length === 0 && b.dupTokens === 0) continue;
+          L.push("    - " + b.name + ": root " + b.rootTokens + " tok / bundle " + b.bundleTokens + " tok / refs " + b.refs.length + (b.missingRefs.length ? " / MISSING FILE: " + b.missingRefs.slice(0, 3).join(", ") : "") + (b.missingDirs.length ? " / dir-not-present: " + b.missingDirs.slice(0, 3).join(", ") : "") + (b.dupTokens ? " / dup " + b.dupLines.length + " line(s) ~" + b.dupTokens + " tok" : ""));
+        }
+      };
+      fmt(a.bundles, "evolution wiki");
+      const cat = String(args?.catalog ?? "").trim();
+      if (cat) {
+        const b2 = auditTree(cat);
+        const totalTok = b2.reduce((n, b) => n + b.bundleTokens, 0);
+        const rootTok = b2.reduce((n, b) => n + b.rootTokens, 0);
+        L.push("  catalog " + cat + ": " + b2.length + " bundles, " + rootTok + " root tok / " + totalTok + " bundle tok (~" + Math.round(rootTok / Math.max(1, totalTok) * 100) + "% always-loaded)");
+        fmt(b2, "catalog detail");
+      }
+      return L.join(String.fromCharCode(10));
     }
   });
   reg({
@@ -2312,7 +2492,7 @@ function createHonoApp(_ctx) {
   const app = new Hono2();
   let skillCount = 0;
   try {
-    skillCount = readdirSync2(skillsRoot, { withFileTypes: true }).filter((e) => e.isDirectory()).length;
+    skillCount = readdirSync3(skillsRoot, { withFileTypes: true }).filter((e) => e.isDirectory()).length;
   } catch {
   }
   app.get("/api/skill-pack/health", (c) => c.json({ ok: true, plugin: "dsh-skill-pack", ts: true, hono: true, skills: skillCount }));

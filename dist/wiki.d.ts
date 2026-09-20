@@ -1,3 +1,6 @@
+export declare const NL: string;
+export declare function wikiRoot(): string;
+export declare function ensureLayers(): void;
 /** Ingest an experience trace into raw/ (immutable). */
 export declare function ingestExperience(title: string, content: string, meta?: Record<string, unknown>): string;
 /** Consolidate a raw trace into a wiki pattern (Wiki Maintainer). */

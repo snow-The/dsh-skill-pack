@@ -13,8 +13,58 @@
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import {
+  acpGraphStatus,
+  withAcpGraph,
+  type AcpGraphStatus,
+} from './acp-graph-contract.js';
 
 export const NL = String.fromCharCode(10);
+
+/** 最近一次 ACP 读取失败的原因（供诊断输出）；成功时为 null。 */
+let lastAcpProblem: { detail: string; status: AcpGraphStatus } | null = null;
+
+/**
+ * 记录失败原因。只有 'no-db' 不打日志：图不存在是预期内的降级（不装 handoff 也能用），
+ * 状态由 acpGraphStatusLine() 表达；其余原因都是真故障，必须出声。原因一律进
+ * lastAcpProblem，因此诊断永远完整。
+ */
+function note(detail: string, status: AcpGraphStatus): void {
+  lastAcpProblem = { detail, status };
+  if (status.reason === 'no-db') return;
+  console.warn('[dsh-skill-pack] ACP graph read failed:', detail, `(reason=${status.reason})`);
+}
+
+/** 诊断用：契约状态 + 最近一次失败原因。 */
+export function acpGraphDiagnostics(): { status: AcpGraphStatus; lastProblem: { detail: string; status: AcpGraphStatus } | null } {
+  return { status: acpGraphStatus(), lastProblem: lastAcpProblem };
+}
+
+/**
+ * 一行人类可读的状态。刻意区分"没装 handoff"与"装了但读不了"：旧行为是两者都表现为
+ * "ingested 0"，用户无从判断该去装插件还是该去查 schema。
+ */
+export function acpGraphStatusLine(): string {
+  const s = acpGraphStatus();
+  switch (s.reason) {
+    case 'ok':
+      return `available (contract v${s.contractVersion}, db v${s.stampedVersion})`;
+    case 'no-contract':
+      return `available (db has no version stamp; shape verified against contract v${s.contractVersion})`;
+    case 'no-db':
+      return `not available — ${s.path} does not exist (is dsh-session-handoff installed?)`;
+    case 'schema-mismatch':
+      return `NOT readable — ${s.detail}${s.missing ? ' missing: ' + JSON.stringify(s.missing) : ''}`;
+    default:
+      return `NOT readable — ${s.detail ?? 'unknown error'}`;
+  }
+}
+
+/** 图是否【可读】（契约可读，与数据量无关）。 */
+export function acpGraphAvailable(): boolean {
+  return acpGraphStatus().ok;
+}
+
 export function wikiRoot(): string {
   const base = process.env.DSH_HOME ?? join(homedir(), '.dsh');
   return join(base, 'skill-wiki');
@@ -106,22 +156,27 @@ export function wikiStatus(): { raw: number; patterns: number; skills: number; a
   };
 }
 
-/** Pull ACP compaction summaries from ~/.dsh/graph/graph.db as experience source. */
+/**
+ * Pull ACP compaction summaries from the ACP graph (~/.dsh/graph/graph.db) as experience source.
+ *
+ * 读取经【规范化只读契约】（src/acp-graph-contract.ts，由 dsh-acp-graph-contract 同步而来，
+ * 顶部带源哈希）。旧实现有两个问题：
+ *   1) 它用 `require('node:sqlite')` 取驱动——而本插件是 ESM 打包，`require` 在 ESM 里
+ *      根本不存在，于是 ReferenceError 被外层 `catch { return [] }` 吞掉：
+ *      这个功能一直是【静默失效】的（永远"ingested 0"）。
+ *   2) 无论读失败还是本来就没 checkpoint，都返回 []，与"成功但空"无法区分。
+ * 现在：读取在契约保护下，失败是具名的并通过 acpGraphStatusLine() 可解释；
+ * 只有【读取】被兜底——写 raw/ 失败必须报出来，不能伪装成"0 个 checkpoint"。
+ */
 export function ingestFromAcp(limit = 10): string[] {
-  try {
-    const req = require as any;
-    const { DatabaseSync } = req('node:sqlite');
-    const base = process.env.DSH_HOME ?? join(homedir(), '.dsh');
-    const dbPath = join(base, 'graph', 'graph.db');
-    if (!existsSync(dbPath)) return [];
-    const db = new DatabaseSync(dbPath, { readOnly: true });
-    try {
-      const rows = db.prepare('SELECT session_id, seq_start, summary, created_at FROM checkpoints ORDER BY created_at DESC LIMIT ?').all(limit) as { session_id: string; seq_start: number; summary: string; created_at: number }[];
-      const files: string[] = [];
-      for (const r of rows) {
-        files.push(ingestExperience('acp-cp-' + r.session_id + '-' + r.seq_start, r.summary, { source: 'acp_graph', session: r.session_id, seq: r.seq_start }));
-      }
-      return files;
-    } finally { db.close(); }
-  } catch { return []; }
+  const read = withAcpGraph((db) =>
+    db.prepare('SELECT session_id, seq_start, summary, created_at FROM checkpoints ORDER BY created_at DESC LIMIT ?').all(limit) as unknown as {
+      session_id: string; seq_start: number; summary: string; created_at: number;
+    }[]);
+  if (!read.ok) { note(read.detail, read.status); return []; }
+  const files: string[] = [];
+  for (const r of read.value) {
+    files.push(ingestExperience('acp-cp-' + r.session_id + '-' + r.seq_start, r.summary, { source: 'acp_graph', session: r.session_id, seq: r.seq_start }));
+  }
+  return files;
 }

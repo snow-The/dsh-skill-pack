@@ -15,9 +15,9 @@
 import { fileURLToPath } from 'node:url'
 import { readdirSync } from 'node:fs'
 import { apply as applyFilesystemProvider } from '@deepseek-ai/dsh-skill-filesystem'
-import { Hono } from 'hono'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
-  ingestExperience, consolidatePattern, logEvolution, proposeSkill, gateSkill, wikiStatus, ingestFromAcp,
+  ingestExperience, consolidatePattern, logEvolution, proposeSkill, gateSkill, wikiStatus, ingestFromAcp, acpGraphStatusLine,
 } from './wiki.js'
 import { auditWiki, auditTree, approxTokens } from './audit.js'
 
@@ -43,7 +43,11 @@ export function apply(ctx: any) {
   reg({
     name: 'skillwiki_status',
     description: 'WikiSkill status: raw/ experience traces, wiki patterns, candidate skills, active skills, recent evolution log.',
-    parameters: {},
+    // Explicit empty-object schema. A bare `{}` serializes without `type`, which the
+    // provider rejects for the WHOLE run: "Invalid schema for function
+    // 'skillwiki_status': schema must be a JSON Schema of 'type: \"object\"', got
+    // 'type: null'". A parameterless tool still needs a typed object schema.
+    parameters: { type: 'object', properties: {}, required: [] },
     output: textOut,
     execute: () => { const s = wikiStatus(); return 'Skill Wiki (~/.dsh/skill-wiki):\n  raw=' + s.raw + ' patterns=' + s.patterns + ' candidates=' + s.skills + ' active=' + s.active + '\n\nrecent log:\n' + (s.logs.length ? s.logs.join('\n') : '(empty)') },
   })
@@ -110,7 +114,12 @@ export function apply(ctx: any) {
     },
     output: textOut,
     execute: (args: any) => {
-      if (args?.from === 'acp') { const files = ingestFromAcp(Number(args?.limit) || 10); return 'ingested ' + files.length + ' ACP checkpoint(s) into raw/' }
+      if (args?.from === 'acp') {
+        const files = ingestFromAcp(Number(args?.limit) || 10);
+        // "0 个"必须能自我解释：没装 handoff 和 schema 读不了是两回事，旧行为都是 0。
+        const why = files.length ? '' : '\nACP graph: ' + acpGraphStatusLine();
+        return 'ingested ' + files.length + ' ACP checkpoint(s) into raw/' + why;
+      }
       if (!args?.title || !args?.content) throw new Error('title and content required')
       const f = ingestExperience(String(args.title), String(args.content))
       logEvolution('ingest', 'experience', String(args.title))
@@ -162,29 +171,127 @@ export function apply(ctx: any) {
     execute: (args: any) => gateSkill(String(args.name), args?.accept === true, args?.score != null ? Number(args.score) : undefined),
   })
 
-  // Hono app: try to mount on the host http service when available.
-  try {
-    const http = ctx.http
-    if (http?.mount) http.mount('/skill-pack', createHonoApp(ctx).fetch)
-  } catch {
-    /* no host http service */
-  }
+  // HTTP: mount on the host web server when the profile ships one.
+  //
+  // 这里原先的写法是 `ctx.http?.mount?.('/skill-pack', createHonoApp(ctx).fetch)` —— 而
+  // **`ctx.http` 不是 DSH 的服务**(官方 90 个 ctx.* 里没有它), 所以可选链让它永远是 no-op:
+  // 那条健康检查路由从未生效过, 而 `hono` 依赖却一直背着。
+  //
+  // 官方范式见 dsh 源码 host/open-in-app/src/index.ts:193-204 与
+  // client/connection/src/index.ts:139-159:
+  //   ctx.inject(['webServer'], (webCtx) => webCtx.effect(() => webCtx.webServer.register(route), 'label'))
+  // handler 拿的是**原生** IncomingMessage/ServerResponse —— DSH 的 web 层本来就是 node:http,
+  // 官方不依赖 hono、也没有 Node↔Fetch 桥。所以这里不去造桥, 而是按官方写法直接用 res。
+  //
+  // 为什么必须用 ctx.inject 而不是 `if (ctx.webServer)`: cordis 的 ctx 是代理, 读一个已
+  // 注册但未声明 inject 的服务会**直接抛** "cannot get property ... without inject",
+  // 可选链挡不住(get 陷阱先抛), 结果是整个插件激活失败 —— 不只是路由不注册。
+  ctx.inject?.(['webServer'], (webCtx: any) => {
+    const rejected = createRequestFence(ctx)
+    const register = (): (() => void) => webCtx.webServer.register({
+      kind: 'exact',
+      path: '/api/skill-pack/health',
+      handler: async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+      if (rejected(req, res)) return
+        if (req.method !== 'GET') {
+          res.statusCode = 405
+          res.setHeader('allow', 'GET')
+          res.end()
+          return
+        }
+        let skills = 0
+        try {
+          skills = readdirSync(skillsRoot, { withFileTypes: true }).filter((e) => e.isDirectory()).length
+        } catch { /* skills dir not readable here */ }
+        const body = JSON.stringify({ ok: true, plugin: name, skills })
+        res.statusCode = 200
+        res.setHeader('content-type', 'application/json; charset=utf-8')
+        res.end(body)
+      },
+    })
+    // ctx.effect 让路由随本插件的 fiber 一起释放, 不需要手动存 disposer。
+    if (typeof webCtx.effect === 'function') webCtx.effect(register, `skill-pack: GET /api/skill-pack/health`)
+    else register()
+  })
 }
 
-// --- Hono app factory (same pattern as dsh-codex) ---
+/**
+ * Apply the official Host/Origin + browser-auth fence to one plugin's health routes.
+ *
+ * SOURCE — copied from the official DSH 0.1.7-rc.2 package `@deepseek-ai/dsh-host-open-in-app`,
+ * which states the contract in its own module comment
+ * (`lib/types/index.js:1-21`): "Security has one home, here. **Every route** asks the
+ * composition's `connection` service for a rejection first (`requestRejection`): its Host/Origin
+ * fence defeats DNS rebinding and cross-site calls, and its browser authentication (the
+ * login-token cookie) gates every caller". The helper shape is `lib/index.js:1263-1270` and its
+ * use is the first line of every handler there (`lib/index.js:1274-1275`).
+ *
+ * `requestRejection` itself (`dsh-client-connection/lib/index.js:586-589`):
+ *   403 -> the Host is not loopback/trusted, or `sec-fetch-site: cross-site`, or Origin != Host
+ *   401 -> the fence passed but there is no valid login-token cookie
+ * so an anonymous request gets 401 and a forged one gets 403. Authentication accepts the
+ * `dsh-auth-*` cookie ONLY (minted by the 303 set-cookie on `GET /?token=...`); the boot token
+ * itself does not authenticate an API call. A browser that loaded the page first is unaffected.
+ *
+ * DO NOT "simplify" this away, and do not replace the read with `Reflect.get(ctx, 'connection')`.
+ * The official helper is written that way because its own plugin declares `inject: ['connection']`;
+ * from a plugin that does not, MEASURED on a live 127.0.0.1 instance, BOTH
+ * `ctx.connection` AND `Reflect.get(ctx, 'connection')` throw
+ * `cannot get property "connection" without inject` (cordis's proxy get-trap throws before any
+ * optional chaining can help), while `ctx.get('connection')` returned the live
+ * `HostConnectionService` with `requestRejection` present. `ctx.get` is also the official
+ * inject-free service read — `dsh-web-app/lib/index.js:216` gates the ready banner on
+ * `connectionCtx.get("connection") !== void 0`.
+ *
+ * FAIL-CLOSED. When the service is unreachable the request is answered 503, never forwarded:
+ * silently serving would reopen exactly the hole this helper exists to close. In this profile
+ * the branch is unreachable by construction — the route only registers under
+ * `ctx.inject(['webServer'])`, and every composition that has `webServer` also carries
+ * `connection` (`dsh-web-app/cordis.patch.yml:210-217` registers it beside the webserver).
+ *
+ * Each plugin carries its OWN copy on purpose: they are independent packages, and a shared
+ * module would create a new deployment coupling (the ACP-graph contract already showed what
+ * that costs, with 5 copies to re-sync on every edit).
+ */
 
-export interface AppEnv {
-  Bindings: { ctx: unknown }
+/** Just enough of the official HostConnectionService for the fence call. */
+interface RequestFenceConnection {
+  /** @returns 401/403 when the request must be refused, `undefined` when it may proceed. */
+  requestRejection: (request: IncomingMessage) => number | undefined
 }
 
-export function createHonoApp(_ctx: unknown): Hono<AppEnv> {
-  const app = new Hono<AppEnv>()
-  let skillCount = 0
-  try {
-    skillCount = readdirSync(skillsRoot, { withFileTypes: true }).filter((e) => e.isDirectory()).length
-  } catch {
-    /* skills dir not readable here */
+/**
+ * Build the fence for one plugin life.
+ *
+ * @param ctx - the plugin's context; only `get` is used, and only at call time.
+ * @returns true when the request was answered by the fence and the handler must stop.
+ */
+function createRequestFence(ctx: unknown): (req: IncomingMessage, res: ServerResponse) => boolean {
+  /** Read the service without declaring `inject` — see the read note above for why not Reflect.get. */
+  const resolveConnection = (): RequestFenceConnection | undefined => {
+    const read = (ctx as { get?: (name: string) => unknown } | null | undefined)?.get
+    if (typeof read !== 'function') return undefined
+    try {
+      const connection = read.call(ctx, 'connection') as RequestFenceConnection | undefined
+      return typeof connection?.requestRejection === 'function' ? connection : undefined
+    } catch {
+      return undefined
+    }
   }
-  app.get('/api/skill-pack/health', (c) => c.json({ ok: true, plugin: 'dsh-skill-pack', ts: true, hono: true, skills: skillCount }))
-  return app
+
+  return (req, res) => {
+    const connection = resolveConnection()
+    if (connection === undefined) {
+      // Fail closed: an unreachable fence must not become an open route.
+      res.statusCode = 503
+      res.setHeader('content-type', 'application/json; charset=utf-8')
+      res.end(JSON.stringify({ error: 'connection service unavailable: the Host/Origin fence cannot be applied' }))
+      return true
+    }
+    const rejection = connection.requestRejection(req)
+    if (rejection === undefined) return false
+    res.statusCode = rejection
+    res.end()
+    return true
+  }
 }

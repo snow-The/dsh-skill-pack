@@ -38,9 +38,7 @@
       "patch": "./cordis.patch.yml"
     }
   },
-  "dependencies": {
-    "hono": "^4.13.3"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@types/node": "^26.2.0",
     "esbuild": "^0.28.2",

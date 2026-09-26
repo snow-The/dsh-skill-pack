@@ -54,6 +54,16 @@ export function skillRefs(md: string): string[] {
       let start = at;
       while (start >= 3 && text.slice(start - 3, start) === '../') start -= 3;
       if (start >= 2 && text.slice(start - 2, start) === './') start -= 2;
+      // 回退到 token 的真正起点(向左走到分隔符为止), 再判断它是不是绝对/家目录路径。
+      // 只判断"紧邻字符"是不够的: 病例 `/root/mscripts/` 里 `scripts/` 左边是 `m`,
+      // 而真正的起点 `/` 在更左边 —— 旧逻辑据此把它当成相对目录 `mscripts/`,
+      // 于是一句历史叙述被报成 "dir-not-present"。指向技能目录【之外】的路径不是
+      // 技能内部路由, 跳过而不是报断裂。
+      let tokStart = start;
+      while (tokStart > 0 && stops.indexOf(text[tokStart - 1]) < 0) tokStart--;
+      const tokenText = text.slice(tokStart, start);
+      const isAbsolute = tokenText.includes('/') || tokenText.startsWith('~');
+      if (isAbsolute) { at = text.indexOf(d, j); continue; }
       const token = text.slice(start, j).replace(/[.,;:]+$/, '');
       add(token);
       at = text.indexOf(d, j);

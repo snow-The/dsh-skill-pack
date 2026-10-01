@@ -1,6 +1,6 @@
 {
   "name": "@snow-the/dsh-skill-pack",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Curated engineering skills for DeepSeek Harness: handoff, grilling, teach, spec/ticket workflows, writing skills, and the DESIGN.md format. Cross-platform (pure SKILL.md text, no platform code).",
   "type": "module",
   "main": "./dist/index.js",
@@ -26,7 +26,7 @@
     "README.md"
   ],
   "peerDependencies": {
-    "@deepseek-ai/dsh-skill-filesystem": "^0.1.0-rc.6"
+    "@deepseek-ai/dsh-skill-filesystem": ">=0.1.0-rc.6"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-skill-filesystem": {

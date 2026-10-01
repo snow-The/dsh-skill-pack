@@ -26,7 +26,9 @@
     "README.md"
   ],
   "peerDependencies": {
-    "@deepseek-ai/dsh-skill-filesystem": ">=0.1.0-rc.6"
+    "@deepseek-ai/dsh": ">=0.2.0-rc.1",
+    "@deepseek-ai/dsh-skill-filesystem": ">=0.2.0-rc.1",
+    "@deepseek-ai/dsh-tools": ">=0.2.0-rc.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-skill-filesystem": {
@@ -36,6 +38,13 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "compatibility": {
+      "dshReleases": [
+        "0.2.0-rc.1",
+        "0.2.0-rc.2"
+      ],
+      "verifiedAgainst": "0.2.0-rc.2"
     }
   },
   "dependencies": {},

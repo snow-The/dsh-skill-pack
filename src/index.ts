@@ -38,7 +38,7 @@ export function apply(ctx: any) {
 
   // --- WikiSkill evolution tools (object-literal registration, no dsh-tools dep) ---
   const textOut = { schema: { type: 'string' }, render: (_a: any, v: any) => [{ type: 'text', text: String(v) }] }
-  const reg = (t: any) => { try { ctx.tools.register(t) } catch (e) { console.error('[skill-pack] ' + t.name + ' skipped: ' + e) } }
+  const reg = (t: any) => { try { ctx.tools.register(t) } catch (e) { console.error('[dsh-skill-pack] ' + t.name + ' skipped: ' + e) } }
 
   reg({
     name: 'skillwiki_status',

@@ -420,7 +420,7 @@ function apply(ctx) {
     try {
       ctx.tools.register(t);
     } catch (e) {
-      console.error("[skill-pack] " + t.name + " skipped: " + e);
+      console.error("[dsh-skill-pack] " + t.name + " skipped: " + e);
     }
   };
   reg({

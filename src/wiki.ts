@@ -10,7 +10,7 @@
  * propose skill update → gate (accept/reject). Wiki keeps cross-iteration
  * history so rejected interventions aren't re-proposed.
  */
-import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, appendFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, appendFileSync, cpSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import {
@@ -121,6 +121,15 @@ export function proposeSkill(name: string, description: string, body: string, fr
   return join(dir, 'SKILL.md');
 }
 
+/** Count files in a directory tree (for the gate report). */
+function countFiles(dir: string): number {
+  let n = 0;
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    n += e.isDirectory() ? countFiles(join(dir, e.name)) : 1;
+  }
+  return n;
+}
+
 /** Gate: accept a candidate skill (move to active) or reject (remove). */
 export function gateSkill(name: string, accept: boolean, score?: number): string {
   ensureLayers();
@@ -128,11 +137,17 @@ export function gateSkill(name: string, accept: boolean, score?: number): string
   const active = join(wikiRoot(), 'skills-active', slug(name));
   if (!existsSync(dir)) return 'skill not found: ' + name;
   if (accept) {
-    mkdirSync(active, { recursive: true });
-    writeFileSync(join(active, 'SKILL.md'), readFileSync(join(dir, 'SKILL.md'), 'utf8'), 'utf8');
+    // Copy the WHOLE bundle, not just SKILL.md. Measured 2026-11-07: a gate that copied only
+    // SKILL.md left the active bundle routing to references/ that were never copied — the audit
+    // reported MISSING FILE for all three, the exact "broken routing" failure that makes a skill
+    // silently lose a branch (SkillZip Pro, arXiv 2608.30785).
+    // rm first so a stale file from an earlier accept cannot survive as a phantom reference.
+    rmSync(active, { recursive: true, force: true });
+    cpSync(dir, active, { recursive: true });
+    const bundleFiles = countFiles(active);
     appendFileSync(join(wikiRoot(), 'wiki', 'skill-impact.md'), NL + '- **' + ts() + '** ACCEPT ' + name + (score != null ? ' score=' + score : '') + NL, 'utf8');
     logEvolution('gate', 'accept', name + (score != null ? ' (score ' + score + ')' : ''));
-    return 'accepted: ' + name;
+    return 'accepted: ' + name + ' (' + bundleFiles + ' files copied)';
   }
   appendFileSync(join(wikiRoot(), 'wiki', 'skill-impact.md'), NL + '- **' + ts() + '** REJECT ' + name + ' — do not re-propose without new evidence' + NL, 'utf8');
   logEvolution('gate', 'reject', name);

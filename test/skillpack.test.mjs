@@ -257,3 +257,32 @@ test('fence: the method check still applies once the fence allows the request', 
   assert.equal(res.statusCode, 405)
   assert.equal(res.headers['allow'], 'GET')
 })
+
+test('skillwiki_gate copies the WHOLE bundle, so references survive the gate', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const home = mkdtempSync(join(tmpdir(), 'skillwiki-gate-'))
+  const prev = process.env.DSH_HOME
+  process.env.DSH_HOME = home
+  try {
+    const registered = []
+    apply({ skills: { provider: null }, tools: { register: (t) => { registered.push(t); return t } } })
+    const byName = (n) => registered.find((t) => t.name === n)
+    await byName('skillwiki_propose').execute({ name: 'bundle-gate', description: 'd', body: 'b' })
+    // proposeSkill writes root only; the author then adds references/ (SkillZip bundle shape)
+    const refs = join(home, 'skill-wiki', 'skills', 'bundle-gate', 'references')
+    mkdirSync(refs, { recursive: true })
+    writeFileSync(join(refs, 'detail.md'), '# detail' + String.fromCharCode(10), 'utf8')
+    const out = await byName('skillwiki_gate').execute({ name: 'bundle-gate', accept: true, score: 0.9 })
+    const active = join(home, 'skill-wiki', 'skills-active', 'bundle-gate')
+    assert.ok(existsSync(join(active, 'SKILL.md')), 'root must be copied: ' + out)
+    assert.ok(
+      existsSync(join(active, 'references', 'detail.md')),
+      'references/ must be copied too — copying root alone is broken routing: ' + out,
+    )
+  } finally {
+    process.env.DSH_HOME = prev
+    rmSync(home, { recursive: true, force: true })
+  }
+})

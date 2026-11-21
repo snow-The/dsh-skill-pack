@@ -4,7 +4,7 @@ import { readdirSync as readdirSync3 } from "node:fs";
 import { apply as applyFilesystemProvider } from "@deepseek-ai/dsh-skill-filesystem";
 
 // src/wiki.ts
-import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync as existsSync2, appendFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync as existsSync2, appendFileSync, cpSync, rmSync } from "node:fs";
 import { join as join2 } from "node:path";
 import { homedir as homedir2 } from "node:os";
 
@@ -200,17 +200,25 @@ function proposeSkill(name2, description, body, fromPatterns = [], origin = "") 
   writeFileSync(join2(dir, "SKILL.md"), sk, "utf8");
   return join2(dir, "SKILL.md");
 }
+function countFiles(dir) {
+  let n = 0;
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    n += e.isDirectory() ? countFiles(join2(dir, e.name)) : 1;
+  }
+  return n;
+}
 function gateSkill(name2, accept, score) {
   ensureLayers();
   const dir = join2(wikiRoot(), "skills", slug(name2));
   const active = join2(wikiRoot(), "skills-active", slug(name2));
   if (!existsSync2(dir)) return "skill not found: " + name2;
   if (accept) {
-    mkdirSync(active, { recursive: true });
-    writeFileSync(join2(active, "SKILL.md"), readFileSync(join2(dir, "SKILL.md"), "utf8"), "utf8");
+    rmSync(active, { recursive: true, force: true });
+    cpSync(dir, active, { recursive: true });
+    const bundleFiles = countFiles(active);
     appendFileSync(join2(wikiRoot(), "wiki", "skill-impact.md"), NL + "- **" + ts() + "** ACCEPT " + name2 + (score != null ? " score=" + score : "") + NL, "utf8");
     logEvolution("gate", "accept", name2 + (score != null ? " (score " + score + ")" : ""));
-    return "accepted: " + name2;
+    return "accepted: " + name2 + " (" + bundleFiles + " files copied)";
   }
   appendFileSync(join2(wikiRoot(), "wiki", "skill-impact.md"), NL + "- **" + ts() + "** REJECT " + name2 + " \u2014 do not re-propose without new evidence" + NL, "utf8");
   logEvolution("gate", "reject", name2);

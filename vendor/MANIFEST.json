@@ -1,0 +1,174 @@
+{
+  "generated_at": "2026-11-07T14:41:38.873Z",
+  "note": "第三方 skill 素材（不掛載）。來源與授權見 SKILL-PROVENANCE.md / THIRD-PARTY-NOTICES.md",
+  "entries": [
+    {
+      "name": "ask-matt",
+      "upstream": "mattpocock-skills",
+      "sha256": "a274b6aa430e85df",
+      "bytes": 8205
+    },
+    {
+      "name": "edit-article",
+      "upstream": "mattpocock-skills",
+      "sha256": "3d6f8a603aeef1c6",
+      "bytes": 735
+    },
+    {
+      "name": "handoff",
+      "upstream": "mattpocock-skills",
+      "sha256": "f2f996493855305a",
+      "bytes": 805
+    },
+    {
+      "name": "implement",
+      "upstream": "mattpocock-skills",
+      "sha256": "4c6b9c038401b3e1",
+      "bytes": 416
+    },
+    {
+      "name": "improve-codebase-architecture",
+      "upstream": "mattpocock-skills",
+      "sha256": "59fadd2ebf57b81d",
+      "bytes": 6078
+    },
+    {
+      "name": "loop-me",
+      "upstream": "mattpocock-skills",
+      "sha256": "e9e2a95b70e2c5f4",
+      "bytes": 2486
+    },
+    {
+      "name": "setup-ts-deep-modules",
+      "upstream": "mattpocock-skills",
+      "sha256": "e2398991839cfdc9",
+      "bytes": 7666
+    },
+    {
+      "name": "teach",
+      "upstream": "mattpocock-skills",
+      "sha256": "d55768236cc072f8",
+      "bytes": 9561
+    },
+    {
+      "name": "to-questionnaire",
+      "upstream": "mattpocock-skills",
+      "sha256": "ea10cf8140a8e2e5",
+      "bytes": 2942
+    },
+    {
+      "name": "to-spec",
+      "upstream": "mattpocock-skills",
+      "sha256": "c9d4bb8fcf24f8b4",
+      "bytes": 3116
+    },
+    {
+      "name": "to-tickets",
+      "upstream": "mattpocock-skills",
+      "sha256": "1909c44b08544ddd",
+      "bytes": 5780
+    },
+    {
+      "name": "triage",
+      "upstream": "mattpocock-skills",
+      "sha256": "cb68ecdaeff51a71",
+      "bytes": 6654
+    },
+    {
+      "name": "wayfinder",
+      "upstream": "mattpocock-skills",
+      "sha256": "eb66d111b62eb9d6",
+      "bytes": 11996
+    },
+    {
+      "name": "wizard",
+      "upstream": "mattpocock-skills",
+      "sha256": "cd2ec77beabec1b2",
+      "bytes": 4198
+    },
+    {
+      "name": "writing-fragments",
+      "upstream": "mattpocock-skills",
+      "sha256": "dbae712527ce2b0d",
+      "bytes": 3626
+    },
+    {
+      "name": "writing-shape",
+      "upstream": "mattpocock-skills",
+      "sha256": "639b219925eb692e",
+      "bytes": 6017
+    },
+    {
+      "name": "zoom-out",
+      "upstream": "mattpocock-skills",
+      "sha256": "b1b500bee13cadb9",
+      "bytes": 405
+    },
+    {
+      "name": "api-and-interface-design",
+      "upstream": "addyosmani-agent-skills",
+      "sha256": "5dafd0c44a3aabf1",
+      "bytes": 14884
+    },
+    {
+      "name": "code-review-and-quality",
+      "upstream": "addyosmani-agent-skills",
+      "sha256": "8f3cabca581bbf7c",
+      "bytes": 20555
+    },
+    {
+      "name": "code-simplification",
+      "upstream": "addyosmani-agent-skills",
+      "sha256": "f0c5ed754057eb0c",
+      "bytes": 13545
+    },
+    {
+      "name": "deprecation-and-migration",
+      "upstream": "addyosmani-agent-skills",
+      "sha256": "92d9846321fab624",
+      "bytes": 12516
+    },
+    {
+      "name": "documentation-and-adrs",
+      "upstream": "addyosmani-agent-skills",
+      "sha256": "b867bb80fb681257",
+      "bytes": 9782
+    },
+    {
+      "name": "doubt-driven-development",
+      "upstream": "addyosmani-agent-skills",
+      "sha256": "0a058297aa6bdf90",
+      "bytes": 16499
+    },
+    {
+      "name": "incremental-implementation",
+      "upstream": "addyosmani-agent-skills",
+      "sha256": "3a3581e7084a0dc8",
+      "bytes": 9507
+    },
+    {
+      "name": "performance-optimization",
+      "upstream": "addyosmani-agent-skills",
+      "sha256": "e2def7de6cfcdaa6",
+      "bytes": 15145
+    },
+    {
+      "name": "security-and-hardening",
+      "upstream": "addyosmani-agent-skills",
+      "sha256": "2f9979b84678ca6f",
+      "bytes": 24192
+    },
+    {
+      "name": "source-driven-development",
+      "upstream": "addyosmani-agent-skills",
+      "sha256": "719d4e54083c90de",
+      "bytes": 9949
+    },
+    {
+      "name": "test-driven-development",
+      "upstream": "addyosmani-agent-skills",
+      "sha256": "440fb3c9b76f4f1b",
+      "bytes": 16483
+    }
+  ]
+}
